@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#101820">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="MatchTracker">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-192.png">
+<title>MatchTracker E-Jugend</title>
+<style>
+:root{--bg:#101820;--panel:#1b2732;--panel2:#243442;--text:#f4f7fa;--muted:#a8b7c5;--green:#20a568;--blue:#2879c7;--red:#d84b4b;--line:#344655}
+*{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--text);font:16px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:env(safe-area-inset-top) 14px calc(22px + env(safe-area-inset-bottom))}
+header{display:flex;justify-content:space-between;align-items:center;padding:16px 2px 12px}h1{font-size:20px;margin:0} .sub{font-size:12px;color:var(--muted);margin-top:3px}
+nav{display:flex;gap:6px;background:var(--panel);padding:5px;border-radius:13px;margin-bottom:14px}nav button{flex:1;background:transparent;color:var(--muted);padding:10px 4px;font-size:13px}nav button.active{background:var(--panel2);color:white}
+button{border:0;border-radius:11px;padding:13px 14px;font-weight:700;color:white;background:var(--panel2);font-size:15px;cursor:pointer}button:disabled{opacity:.4} .primary{background:var(--green)}.blue{background:var(--blue)}.danger{background:var(--red)}.small{padding:8px 10px;font-size:13px}
+.card{background:var(--panel);border:1px solid #273744;border-radius:17px;padding:15px;margin-bottom:12px}.muted{color:var(--muted)}.tiny{font-size:12px;color:var(--muted)}
+.timer{text-align:center;padding:17px 10px}.phase{font-size:12px;text-transform:uppercase;letter-spacing:1.3px;color:var(--muted);font-weight:800}.clock{font-size:64px;font-weight:800;letter-spacing:-2px;font-variant-numeric:tabular-nums;margin:4px 0}.timer-actions{display:flex;justify-content:center;gap:9px;margin-top:12px}
+.score{display:flex;align-items:center;justify-content:space-around;text-align:center}.score .num{font-size:54px;font-weight:800}.score .team{font-weight:700;color:var(--muted);font-size:13px}.score .sep{font-size:30px;color:var(--muted)}
+.actions{display:grid;grid-template-columns:1fr 1fr;gap:9px}.actions button{min-height:58px}.section-title{font-size:16px;font-weight:800;margin:0 0 10px}.event{display:flex;justify-content:space-between;gap:10px;padding:10px 0;border-bottom:1px solid var(--line);font-size:14px}.event:last-child{border:0}.event small{color:var(--muted);display:block;margin-top:3px}
+label{display:block;color:var(--muted);font-size:12px;font-weight:700;margin:10px 0 5px}input,select{width:100%;background:#101a23;color:white;border:1px solid var(--line);border-radius:10px;padding:12px;font-size:16px;min-width:0}
+.row{display:flex;gap:8px;align-items:center}.row>*{flex:1}.player{display:flex;align-items:center;gap:9px;padding:10px 0;border-bottom:1px solid var(--line)}.player:last-child{border:0}.number{background:#314453;border-radius:9px;padding:7px 9px;font-weight:800;min-width:36px;text-align:center}.player-name{flex:1}.tag{font-size:11px;color:var(--muted)}.pill{font-size:11px;background:#314453;padding:4px 7px;border-radius:20px}
+.hidden{display:none!important}.notice{padding:12px;border-radius:12px;background:#3a3020;color:#ffe0a3;font-size:13px;margin-bottom:12px}.modal{position:fixed;inset:0;background:#000b;display:flex;align-items:flex-end;z-index:10;padding:12px}.sheet{background:var(--panel);width:100%;max-width:560px;margin:auto;border-radius:20px;padding:18px;max-height:85vh;overflow:auto}.sheet h2{margin:0 0 12px;font-size:19px}.sheet-actions{display:flex;gap:8px;margin-top:15px}.sheet-actions button{flex:1}.empty{text-align:center;color:var(--muted);padding:18px 5px;font-size:14px}
+@media(min-width:600px){body{max-width:560px;margin:auto}.clock{font-size:76px}}
+</style>
+</head>
+<body>
+<header><div><h1>⚽ MatchTracker</h1><div class="sub">E-Jugend · 2 × 25 Minuten</div></div><button class="small" onclick="newMatch()">Neues Spiel</button></header>
+<nav><button class="active" data-tab="match" onclick="tab('match')">Spiel</button><button data-tab="team" onclick="tab('team')">Mannschaft</button><button data-tab="report" onclick="tab('report')">Bericht</button></nav>
+
+<main id="match">
+ <div id="notice" class="notice hidden"></div>
+ <section class="card timer">
+  <div class="phase" id="phase">1. Halbzeit</div><div class="clock" id="clock">25:00</div><div class="tiny" id="timerHint">Bereit zum Anpfiff</div>
+  <div class="timer-actions"><button class="primary" id="startBtn" onclick="startPause()">▶ Start</button><button onclick="resetHalf()">↺ Zurücksetzen</button><button class="blue hidden" id="nextHalfBtn" onclick="nextHalf()">2. Halbzeit starten →</button></div>
+ </section>
+ <section class="card score"><div><div class="team" id="homeLabel">Heim</div><div class="num" id="homeScore">0</div></div><div class="sep">:</div><div><div class="team" id="awayLabel">Gast</div><div class="num" id="awayScore">0</div></div></section>
+ <div class="actions"><button class="primary" onclick="openGoal()">⚽ Tor erfassen</button><button class="blue" onclick="openSub()">⇄ Wechsel erfassen</button></div>
+ <section class="card" style="margin-top:12px"><div class="section-title">Spielverlauf</div><div id="events"></div></section>
+</main>
+
+<main id="team" class="hidden">
+ <section class="card">
+  <div class="section-title">Mannschaft & Spiel</div>
+  <label>Teamname</label><input id="teamName" placeholder="Meine Mannschaft" onchange="saveSettings()">
+  <label>Gegner</label><input id="opponent" placeholder="Gastmannschaft" onchange="saveSettings()">
+  <div class="tiny" style="margin-top:9px">Maximal 13 Spieler: 7 auf dem Feld (inklusive Torwart) und bis zu 6 Ersatzspieler.</div>
+ </section>
+ <section class="card">
+  <div class="section-title">Spieler hinzufügen</div>
+  <div class="row"><div><label>Rückennummer</label><input id="newNumber" type="number" min="1" max="99" placeholder="z. B. 9"></div><div style="flex:2"><label>Name</label><input id="newName" placeholder="Spielername"></div></div>
+  <label>Startstatus</label><select id="newStatus"><option value="field">Startaufstellung</option><option value="bench">Ersatzspieler</option></select>
+  <button class="primary" style="width:100%;margin-top:12px" onclick="addPlayer()">+ Spieler hinzufügen</button>
+  <div id="playerCount" class="tiny" style="margin-top:12px"></div>
+ </section>
+ <section class="card"><div class="section-title">Kader</div><div id="players"></div></section>
+</main>
+
+<main id="report" class="hidden">
+ <section class="card"><div class="section-title">Spielbericht</div><div id="reportSummary"></div><button class="blue" style="width:100%;margin-top:12px" onclick="shareReport()">Bericht teilen / kopieren</button><button class="danger" style="width:100%;margin-top:8px" onclick="clearEvents()">Spielereignisse löschen</button></section>
+ <section class="card"><div class="section-title">Alle Ereignisse</div><div id="reportEvents"></div></section>
+</main>
+
+<div id="modal" class="modal hidden" onclick="if(event.target===this)closeModal()"><div class="sheet"><h2 id="modalTitle"></h2><div id="modalBody"></div><div class="sheet-actions"><button onclick="closeModal()">Abbrechen</button><button class="primary" id="modalSave">Speichern</button></div></div></div>
+<script>
+const $=id=>document.getElementById(id);
+let state={players:[],events:[],half:1,remaining:1500,running:false,home:0,away:0,team:"Heim",opponent:"Gast",started:false,finished:false};
+let interval=null,alarmTimeout=null;
+function load(){try{let s=JSON.parse(localStorage.getItem('matchtracker'));if(s)state={...state,...s};}catch(e){} $('teamName').value=state.team;$('opponent').value=state.opponent;render();}
+function persist(){localStorage.setItem('matchtracker',JSON.stringify(state));}
+function tab(name){document.querySelectorAll('main').forEach(x=>x.classList.add('hidden'));$(name).classList.remove('hidden');document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('active',b.dataset.tab===name));render();}
+function saveSettings(){state.team=$('teamName').value||'Heim';state.opponent=$('opponent').value||'Gast';persist();render();}
+function fmt(s){let m=Math.floor(s/60),sec=s%60;return String(m).padStart(2,'0')+':'+String(sec).padStart(2,'0')}
+function elapsed(){return (state.half===1?1500:3000)-state.remaining-(state.half===2?1500:0)}
+function minute(){let total=(state.half-1)*25+(1500-state.remaining);return Math.min(50,Math.floor(total/60*60));}
+function stamp(){let sec=1500-state.remaining;return `${state.half}. HZ · ${fmt(sec)}`;}
+function render(){
+ $('phase').textContent=state.finished?'Spiel beendet':state.half+'. Halbzeit';
+ $('clock').textContent=fmt(state.remaining);$('homeLabel').textContent=state.team||'Heim';$('awayLabel').textContent=state.opponent||'Gast';
+ $('homeScore').textContent=state.home;$('awayScore').textContent=state.away;
+ $('startBtn').textContent=state.running?'Ⅱ Pause':(state.finished?'Spiel beendet':state.started?'▶ Fortsetzen':'▶ Start');
+ $('startBtn').disabled=state.finished||(state.half===1&&state.remaining===0);$('nextHalfBtn').classList.toggle('hidden',!(state.half===1&&state.remaining===0&&!state.finished));
+ $('timerHint').textContent=state.running?'Spielzeit läuft':state.remaining===0?'Zeit abgelaufen':state.started?'Uhr angehalten':'Bereit zum Anpfiff';
+ $('notice').classList.toggle('hidden',!state.notice);$('notice').textContent=state.notice||'';
+ $('events').innerHTML=eventHtml(state.events.slice().reverse().slice(0,8));
+ $('players').innerHTML=state.players.map((p,i)=>`<div class="player"><span class="number">${esc(p.num)}</span><span class="player-name">${esc(p.name)}<small class="tag">${p.status==='field'?'Auf dem Feld':'Ersatzbank'}</small></span><button class="small" onclick="editPlayer(${i})">Bearbeiten</button><button class="small danger" onclick="removePlayer(${i})">×</button></div>`).join('')||'<div class="empty">Noch keine Spieler angelegt.</div>';
+ $('playerCount').textContent=`${state.players.length}/13 Spieler · ${state.players.filter(p=>p.status==='field').length}/7 auf dem Feld · ${state.players.filter(p=>p.status==='bench').length}/6 Ersatz`;
+ $('reportSummary').innerHTML=`<div class="score" style="padding:10px 0"><div><div class="team">${esc(state.team)}</div><div class="num">${state.home}</div></div><div class="sep">:</div><div><div class="team">${esc(state.opponent)}</div><div class="num">${state.away}</div></div></div><p class="tiny">${state.events.length} Ereignisse · ${state.finished?'Beendet':state.half+'. Halbzeit'}</p>`;
+ $('reportEvents').innerHTML=eventHtml(state.events.slice().reverse());
+ persist();
+}
+function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function eventHtml(arr){return arr.map(e=>`<div class="event"><div>${e.type==='goal'?'⚽':e.type==='sub'?'⇄':'•'} ${esc(e.text)}<small>${esc(e.time)}</small></div><button class="small" onclick="deleteEvent('${e.id}')">Rückgängig</button></div>`).join('')||'<div class="empty">Noch keine Ereignisse erfasst.</div>'}
+function beep(){try{let C=window.AudioContext||window.webkitAudioContext;if(C){let c=new C(),o=c.createOscillator(),g=c.createGain();o.connect(g);g.connect(c.destination);o.frequency.value=880;g.gain.value=.18;o.start();o.stop(c.currentTime+.45);}}catch(e){} if(navigator.vibrate)navigator.vibrate([250,120,250]);}
+function startPause(){if(state.finished)return;if(state.running){state.running=false;clearInterval(interval);render();return;}state.running=true;state.started=true;state.notice='';interval=setInterval(()=>{if(!state.running)return;if(state.remaining>0)state.remaining--;if(state.remaining===0){state.running=false;clearInterval(interval);if(state.half===1){state.notice='⏸ Halbzeit! Die erste Halbzeit ist beendet. Starte die zweite Halbzeit manuell.';beep();}else{state.finished=true;state.notice='🏁 Spielende! Beide Halbzeiten sind beendet.';beep();}}render();},1000);render();}
+function resetHalf(){if(!confirm('Aktuelle Halbzeit auf 25:00 zurücksetzen?'))return;state.running=false;clearInterval(interval);state.remaining=1500;state.notice='';state.started=false;render();}
+function nextHalf(){state.half=2;state.remaining=1500;state.running=false;state.started=false;state.notice='2. Halbzeit – bereit zum Anpfiff.';render();}
+function newMatch(){if(!confirm('Neues Spiel beginnen? Der aktuelle Spielbericht wird gelöscht, der Kader bleibt erhalten.'))return;clearInterval(interval);state.events=[];state.half=1;state.remaining=1500;state.running=false;state.home=0;state.away=0;state.started=false;state.finished=false;state.notice='';render();tab('match');}
+function openGoal(){if(!state.players.length){alert('Bitte zuerst Spieler unter Mannschaft anlegen.');return;}let opts=state.players.map((p,i)=>`<option value="${i}">${esc(p.num)} · ${esc(p.name)}</option>`).join('');showModal('Tor erfassen',`<label>Torschütze</label><select id="goalPlayer">${opts}</select><label>Für welche Mannschaft?</label><select id="goalSide"><option value="home">${esc(state.team)}</option><option value="away">${esc(state.opponent)}</option></select>`,()=>{let p=state.players[+$('goalPlayer').value],side=$('goalSide').value;state[side]++;state.events.push({id:crypto.randomUUID(),type:'goal',text:`${side==='home'?state.team:state.opponent}: Nr. ${p.num} ${p.name}`,time:stamp()});render();});}
+function openSub(){let field=state.players.map((p,i)=>({...p,i})).filter(p=>p.status==='field'),bench=state.players.map((p,i)=>({...p,i})).filter(p=>p.status==='bench');if(!field.length||!bench.length){alert('Für einen Wechsel benötigst du mindestens einen Spieler auf dem Feld und einen Ersatzspieler.');return;}showModal('Spielerwechsel',`<label>Ausgewechselter Spieler</label><select id="outPlayer">${field.map(p=>`<option value="${p.i}">${esc(p.num)} · ${esc(p.name)}</option>`).join('')}</select><label>Einwechselspieler</label><select id="inPlayer">${bench.map(p=>`<option value="${p.i}">${esc(p.num)} · ${esc(p.name)}</option>`).join('')}</select>`,()=>{let a=state.players[+$('outPlayer').value],b=state.players[+$('inPlayer').value];a.status='bench';b.status='field';state.events.push({id:crypto.randomUUID(),type:'sub',text:`Nr. ${a.num} ${a.name} raus · Nr. ${b.num} ${b.name} rein`,time:stamp()});render();});}
+function showModal(title,body,save){$('modalTitle').textContent=title;$('modalBody').innerHTML=body;$('modal').classList.remove('hidden');$('modalSave').onclick=()=>{save();closeModal();};}
+function closeModal(){$('modal').classList.add('hidden');}
+function addPlayer(){let num=$('newNumber').value,name=$('newName').value.trim(),status=$('newStatus').value;if(state.players.length>=13){alert('Maximal 13 Spieler möglich.');return;}if(!num||!name){alert('Bitte Rückennummer und Namen eintragen.');return;}if(state.players.some(p=>p.num==num)){alert('Diese Rückennummer ist bereits vergeben.');return;}if(status==='field'&&state.players.filter(p=>p.status==='field').length>=7){alert('Maximal 7 Spieler dürfen als Startaufstellung markiert sein.');return;}if(status==='bench'&&state.players.filter(p=>p.status==='bench').length>=6){alert('Maximal 6 Ersatzspieler möglich.');return;}state.players.push({num,name,status});$('newNumber').value='';$('newName').value='';render();}
+function editPlayer(i){let p=state.players[i];showModal('Spieler bearbeiten',`<label>Rückennummer</label><input id="editNum" type="number" value="${esc(p.num)}"><label>Name</label><input id="editName" value="${esc(p.name)}"><label>Status</label><select id="editStatus"><option value="field" ${p.status==='field'?'selected':''}>Auf dem Feld</option><option value="bench" ${p.status==='bench'?'selected':''}>Ersatzbank</option></select>`,()=>{let num=$('editNum').value,name=$('editName').value.trim(),status=$('editStatus').value;if(state.players.some((x,j)=>j!==i&&x.num==num))return alert('Rückennummer bereits vergeben.');if(status==='field'&&p.status!=='field'&&state.players.filter(x=>x.status==='field').length>=7)return alert('Maximal 7 auf dem Feld.');if(status==='bench'&&p.status!=='bench'&&state.players.filter(x=>x.status==='bench').length>=6)return alert('Maximal 6 Ersatzspieler.');p.num=num;p.name=name;p.status=status;render();});}
+function removePlayer(i){if(confirm(`${state.players[i].name} aus dem Kader entfernen?`)){state.players.splice(i,1);render();}}
+function deleteEvent(id){let e=state.events.find(x=>x.id===id);if(!e)return;if(!confirm('Ereignis rückgängig machen?'))return;if(e.type==='goal'){if(e.text.startsWith(state.team+':'))state.home=Math.max(0,state.home-1);else state.away=Math.max(0,state.away-1);}state.events=state.events.filter(x=>x.id!==id);render();}
+function clearEvents(){if(!confirm('Alle Tore und Wechsel dieses Spiels löschen?'))return;state.events=[];state.home=0;state.away=0;render();}
+function shareReport(){let lines=[`${state.team} ${state.home}:${state.away} ${state.opponent}`,'Spielbericht E-Jugend','',...state.events.map(e=>`${e.time} – ${e.text}`)];let txt=lines.join('\n');if(navigator.share)navigator.share({title:'Spielbericht',text:txt}).catch(()=>{});else if(navigator.clipboard)navigator.clipboard.writeText(txt).then(()=>alert('Spielbericht in die Zwischenablage kopiert.'));else alert(txt);}
+load();
+if('serviceWorker' in navigator && location.protocol.startsWith('http'))navigator.serviceWorker.register('./sw.js').catch(()=>{});
+</script>
+</body></html>
