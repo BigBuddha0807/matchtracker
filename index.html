@@ -9,7 +9,8 @@
 <meta name="apple-mobile-web-app-title" content="MatchTracker">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icon-192.png">
-<title>MatchTracker E-Jugend</title>
+<title>MatchTracker – TuS 1912 Winzenheim</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 :root{--bg:#101820;--panel:#1b2732;--panel2:#243442;--text:#f4f7fa;--muted:#a8b7c5;--green:#20a568;--blue:#2879c7;--red:#d84b4b;--line:#344655}
 *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--text);font:16px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:env(safe-area-inset-top) 14px calc(22px + env(safe-area-inset-bottom))}
@@ -24,11 +25,52 @@ label{display:block;color:var(--muted);font-size:12px;font-weight:700;margin:10p
 .row{display:flex;gap:8px;align-items:center}.row>*{flex:1}.player{display:flex;align-items:center;gap:9px;padding:10px 0;border-bottom:1px solid var(--line)}.player:last-child{border:0}.number{background:#314453;border-radius:9px;padding:7px 9px;font-weight:800;min-width:36px;text-align:center}.player-name{flex:1}.tag{font-size:11px;color:var(--muted)}.pill{font-size:11px;background:#314453;padding:4px 7px;border-radius:20px}
 .hidden{display:none!important}.notice{padding:12px;border-radius:12px;background:#3a3020;color:#ffe0a3;font-size:13px;margin-bottom:12px}.modal{position:fixed;inset:0;background:#000b;display:flex;align-items:flex-end;z-index:10;padding:12px}.sheet{background:var(--panel);width:100%;max-width:560px;margin:auto;border-radius:20px;padding:18px;max-height:85vh;overflow:auto}.sheet h2{margin:0 0 12px;font-size:19px}.sheet-actions{display:flex;gap:8px;margin-top:15px}.sheet-actions button{flex:1}.empty{text-align:center;color:var(--muted);padding:18px 5px;font-size:14px}
 @media(min-width:600px){body{max-width:560px;margin:auto}.clock{font-size:76px}}
+
+.auth-wrap{max-width:560px;margin:22px auto}.auth-card{background:var(--panel);border:1px solid #273744;border-radius:17px;padding:18px;margin-bottom:12px}.auth-card h2{margin:0 0 8px}.auth-actions{display:flex;gap:8px;margin-top:14px}.auth-actions button{flex:1}.auth-note{font-size:13px;color:var(--muted);line-height:1.5}.auth-error{background:#482b2b;color:#ffd0d0;padding:10px;border-radius:10px;margin:10px 0;font-size:13px}.auth-ok{background:#1e4436;color:#c9ffe6;padding:10px;border-radius:10px;margin:10px 0;font-size:13px}.qr{display:block;max-width:220px;width:100%;background:white;padding:10px;border-radius:12px;margin:12px auto}.admin-list{border-top:1px solid var(--line);padding:12px 0}.team-checks{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:8px 0}.team-checks label{display:flex;align-items:center;gap:7px;margin:0;background:#101a23;padding:8px;border-radius:8px}.team-checks input{width:auto}.user-bar{font-size:12px;color:var(--muted);display:flex;gap:8px;align-items:center;justify-content:space-between;margin:0 0 10px}.user-bar button{padding:7px 10px}
 </style>
 </head>
 <body>
-<header><div><h1>⚽ MatchTracker</h1><div class="sub">E-Jugend · 2 × 25 Minuten</div></div><button class="small" onclick="newMatch()">Neues Spiel</button></header>
+<section id="authGate" class="auth-wrap">
+ <div class="auth-card">
+  <h2>⚽ MatchTracker</h2><div class="sub">TuS 1912 Winzenheim · Geschützter Vereinszugang</div>
+  <div id="authMessage" class="auth-note" style="margin-top:12px">Bitte anmelden oder ein Trainerkonto registrieren.</div>
+  <div id="authError" class="auth-error hidden"></div><div id="authSuccess" class="auth-ok hidden"></div>
+  <div id="loginForm">
+   <label>E-Mail-Adresse</label><input id="loginEmail" type="email" autocomplete="username" placeholder="name@verein.de">
+   <label>Passwort</label><input id="loginPassword" type="password" autocomplete="current-password" placeholder="Passwort">
+   <div class="auth-actions"><button class="primary" onclick="loginUser()">Anmelden</button><button onclick="showRegister()">Registrieren</button></div>
+   <button class="small" style="width:100%;margin-top:9px" onclick="resetPassword()">Passwort vergessen?</button>
+  </div>
+  <div id="registerForm" class="hidden">
+   <label>Vor- und Nachname</label><input id="registerName" autocomplete="name" placeholder="Dein Name">
+   <label>E-Mail-Adresse</label><input id="registerEmail" type="email" autocomplete="email" placeholder="name@verein.de">
+   <label>Passwort (mindestens 10 Zeichen)</label><input id="registerPassword" type="password" autocomplete="new-password" placeholder="Sicheres Passwort">
+   <div class="auth-note">Nach der E-Mail-Bestätigung wird eine Zugangs-Anfrage für den TuS 1912 Winzenheim gestellt. Der Super-Admin muss deinen Zugang und deine Mannschaften freigeben.</div>
+   <div class="auth-actions"><button class="primary" onclick="registerUser()">Registrierung senden</button><button onclick="showLogin()">Zurück</button></div>
+  </div>
+  <div id="mfaPanel" class="hidden">
+   <h3 id="mfaTitle">Zwei-Faktor-Authentifizierung</h3><div id="mfaInstructions" class="auth-note"></div>
+   <img id="mfaQr" class="qr hidden" alt="QR-Code für Authenticator-App">
+   <label id="mfaSecretLabel" class="hidden">Einrichtungsschlüssel (manuell)</label><input id="mfaSecret" class="hidden" readonly>
+   <label>6-stelliger Code aus deiner Authenticator-App</label><input id="mfaCode" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="123456">
+   <button class="primary" style="width:100%;margin-top:12px" onclick="verifyMfa()">Code bestätigen</button>
+  </div>
+ </div>
+</section>
+<div id="appShell" class="hidden">
+<header><div><h1>⚽ MatchTracker</h1><div class="sub">TuS 1912 Winzenheim · 2 × 25 Minuten</div></div><button class="small" onclick="newMatch()">Neues Spiel</button></header>
+<div class="user-bar"><span id="signedInAs"></span><button onclick="logoutUser()">Abmelden</button></div>
+<section class="card" id="teamPickerCard"><label>Aktive Mannschaft</label><select id="activeTeamSelect" onchange="switchTeam(this.value)"></select></section>
 <nav><button class="active" data-tab="match" onclick="tab('match')">Spiel</button><button data-tab="team" onclick="tab('team')">Mannschaft</button><button data-tab="report" onclick="tab('report')">Bericht</button><button data-tab="stats" onclick="tab('stats')">Saison</button></nav>
+<section id="adminPanel" class="card hidden"><div class="section-title">Vereinsverwaltung</div>
+ <div class="auth-note">Offene Registrierungen freigeben und Trainer einladen. Rollen und Mannschaftsrechte werden ausschließlich hier vergeben.</div>
+ <div id="pendingRequests"></div>
+ <div class="admin-list"><b>Trainer einladen</b>
+  <label>E-Mail-Adresse</label><input id="inviteEmail" type="email" placeholder="trainer@verein.de">
+  <label>Rolle</label><select id="inviteRole"><option value="coach">Trainer</option><option value="youth_lead">Jugendleitung</option><option value="club_admin">Vereinsadministrator</option></select>
+  <button class="blue" style="width:100%;margin-top:10px" onclick="sendInvitation()">Einladung versenden</button>
+ </div>
+</section>
 
 <main id="match">
  <div id="notice" class="notice hidden"></div>
@@ -82,6 +124,33 @@ label{display:block;color:var(--muted);font-size:12px;font-weight:700;margin:10p
 const $=id=>document.getElementById(id);
 let state={players:[],events:[],history:[],half:1,remaining:1500,running:false,home:0,away:0,team:"Heim",opponent:"Gast",started:false,finished:false,matchDate:new Date().toISOString().slice(0,10)};
 let interval=null,alarmTimeout=null;
+// Supabase-Verbindung – der Publishable Key ist für die Verwendung im Browser vorgesehen.
+const SUPABASE_URL='https://vplnwhmdqyvuvbhmrdyo.supabase.co';
+const SUPABASE_ANON_KEY='sb_publishable_wzHRdSSgtuoKwFw2QsU6rw_T7fQRocj';
+const CLUB_ID='f67073f3-2cbb-4ba0-a43a-2c6f64040762';
+const sb=window.supabase?.createClient ? window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}}) : null;
+let currentUser=null,currentMembership=null,availableTeams=[],activeTeamId=null,currentFactorId=null,currentChallengeId=null,pendingEnrollmentId=null;
+function authMsg(id,msg){$('authError').classList.add('hidden');$('authSuccess').classList.add('hidden');if(id){$(id).textContent=msg;$(id).classList.remove('hidden');}}
+function showLogin(){ $('loginForm').classList.remove('hidden');$('registerForm').classList.add('hidden');$('mfaPanel').classList.add('hidden');authMsg(null,''); }
+function showRegister(){ $('loginForm').classList.add('hidden');$('registerForm').classList.remove('hidden');$('mfaPanel').classList.add('hidden');authMsg(null,''); }
+async function loginUser(){try{authMsg(null,'');const email=$('loginEmail').value.trim(),password=$('loginPassword').value;if(!email||!password)throw Error('Bitte E-Mail-Adresse und Passwort eingeben.');const {data,error}=await sb.auth.signInWithPassword({email,password});if(error)throw error;await handleSession(data.session);}catch(e){authMsg('authError',e.message||'Anmeldung fehlgeschlagen.');}}
+async function registerUser(){try{authMsg(null,'');const display_name=$('registerName').value.trim(),email=$('registerEmail').value.trim(),password=$('registerPassword').value;if(!display_name||!email||password.length<10)throw Error('Bitte Name, gültige E-Mail und ein Passwort mit mindestens 10 Zeichen eingeben.');const {data,error}=await sb.auth.signUp({email,password,options:{data:{display_name},emailRedirectTo:location.origin+location.pathname}});if(error)throw error;if(data.session){await requestClubAccess(data.user,display_name);await handleSession(data.session);}else{authMsg('authSuccess','Registrierung angelegt. Bitte bestätige zuerst den Link in deiner E-Mail. Danach kannst du dich anmelden; deine Zugangs-Anfrage wird dann angelegt.');showLogin();}}catch(e){authMsg('authError',e.message||'Registrierung fehlgeschlagen.');}}
+async function resetPassword(){try{const email=$('loginEmail').value.trim();if(!email)throw Error('Bitte zuerst deine E-Mail-Adresse eintragen.');const {error}=await sb.auth.resetPasswordForEmail(email,{redirectTo:location.origin+location.pathname});if(error)throw error;authMsg('authSuccess','Wir haben dir einen Link zum Zurücksetzen des Passworts geschickt.');}catch(e){authMsg('authError',e.message);}}
+async function logoutUser(){await sb.auth.signOut();location.reload();}
+async function requestClubAccess(user,displayName){const {data:existing,error:findErr}=await sb.from('registration_requests').select('id,status').eq('club_id',CLUB_ID).eq('user_id',user.id).maybeSingle();if(findErr)throw findErr;if(!existing){const {error}=await sb.from('registration_requests').insert({club_id:CLUB_ID,user_id:user.id,display_name:displayName||user.user_metadata?.display_name||user.email,status:'pending'});if(error)throw error;}}
+async function handleSession(session){if(!session){$('authGate').classList.remove('hidden');$('appShell').classList.add('hidden');return;}currentUser=session.user;$('authGate').classList.remove('hidden');$('appShell').classList.add('hidden');$('authMessage').textContent='Sichere Anmeldung wird geprüft …';try{const {data:level,error:levelErr}=await sb.auth.mfa.getAuthenticatorAssuranceLevel();if(levelErr)throw levelErr;if(level.currentLevel!=='aal2'){await prepareMfa();return;}await enterApp();}catch(e){authMsg('authError',e.message||'Anmeldung konnte nicht abgeschlossen werden.');}}
+async function prepareMfa(){const {data,error}=await sb.auth.mfa.listFactors();if(error)throw error;const verified=(data.totp||[]).find(f=>f.status==='verified');$('loginForm').classList.add('hidden');$('registerForm').classList.add('hidden');$('mfaPanel').classList.remove('hidden');$('mfaQr').classList.add('hidden');$('mfaSecret').classList.add('hidden');$('mfaSecretLabel').classList.add('hidden');$('mfaInstructions').textContent='Für den Zugriff auf Vereins- und Spielerdaten ist ein zweiter Faktor erforderlich.';if(verified){currentFactorId=verified.id;const {data:challenge,error:challengeErr}=await sb.auth.mfa.challenge({factorId:verified.id});if(challengeErr)throw challengeErr;currentChallengeId=challenge.id;$('mfaTitle').textContent='Anmeldung bestätigen';$('mfaInstructions').textContent='Öffne deine Authenticator-App und gib den aktuellen sechsstelligen Code ein.';}else{const {data:enroll,error:enrollErr}=await sb.auth.mfa.enroll({factorType:'totp',friendlyName:'MatchTracker Authenticator'});if(enrollErr)throw enrollErr;pendingEnrollmentId=enroll.id;currentFactorId=enroll.id;$('mfaTitle').textContent='Authenticator einrichten';$('mfaInstructions').textContent='Scanne den QR-Code mit deiner Authenticator-App. Alternativ kannst du den Einrichtungsschlüssel manuell eingeben.';$('mfaQr').src=enroll.totp.qr_code;$('mfaQr').classList.remove('hidden');$('mfaSecret').value=enroll.totp.secret;$('mfaSecret').classList.remove('hidden');$('mfaSecretLabel').classList.remove('hidden');const {data:challenge,error:challengeErr}=await sb.auth.mfa.challenge({factorId:enroll.id});if(challengeErr)throw challengeErr;currentChallengeId=challenge.id;}}
+async function verifyMfa(){try{const code=$('mfaCode').value.trim();if(!/^\d{6}$/.test(code))throw Error('Bitte einen sechsstelligen Code eingeben.');const {data,error}=await sb.auth.mfa.verify({factorId:currentFactorId,challengeId:currentChallengeId,code});if(error)throw error;$('mfaCode').value='';await enterApp();}catch(e){authMsg('authError',e.message||'Der MFA-Code konnte nicht bestätigt werden.');}}
+async function enterApp(){const {data:membership,error:mErr}=await sb.from('club_memberships').select('id,club_id,role,active').eq('club_id',CLUB_ID).eq('user_id',currentUser.id).maybeSingle();if(mErr)throw mErr;if(!membership||!membership.active){if(currentUser.email_confirmed_at){await requestClubAccess(currentUser);$('authMessage').textContent='Deine E-Mail ist bestätigt. Deine Zugangs-Anfrage wartet auf Freigabe durch den Super-Admin.';}else{$('authMessage').textContent='Bitte bestätige zuerst deine E-Mail-Adresse.';}$('loginForm').classList.remove('hidden');$('registerForm').classList.add('hidden');$('mfaPanel').classList.add('hidden');return;}currentMembership=membership;let query=sb.from('teams').select('id,code,name,age_group').eq('club_id',CLUB_ID).eq('active',true).order('code');if(!['super_admin','club_admin','youth_lead'].includes(membership.role)){const {data:staff,error:staffErr}=await sb.from('team_staff').select('team_id').eq('membership_id',membership.id);if(staffErr)throw staffErr;const ids=(staff||[]).map(x=>x.team_id);if(!ids.length){$('authMessage').textContent='Dein Konto ist freigeschaltet, aber noch keiner Mannschaft zugeordnet. Bitte wende dich an den Super-Admin.';return;}query=query.in('id',ids);}const {data:teams,error:tErr}=await query;if(tErr)throw tErr;availableTeams=teams||[];if(!availableTeams.length)throw Error('Für dein Konto sind derzeit keine Mannschaften freigegeben.');activeTeamId=activeTeamId&&availableTeams.some(t=>t.id===activeTeamId)?activeTeamId:availableTeams[0].id;$('activeTeamSelect').innerHTML=availableTeams.map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join('');$('activeTeamSelect').value=activeTeamId;$('teamPickerCard').classList.toggle('hidden',availableTeams.length<2);$('signedInAs').textContent=`${currentUser.email} · ${membership.role}`;$('authGate').classList.add('hidden');$('appShell').classList.remove('hidden');loadForActiveTeam();const admin=['super_admin','club_admin'].includes(membership.role);$('adminPanel').classList.toggle('hidden',!admin);if(admin)loadPendingRequests();}
+function loadForActiveTeam(){const key=`matchtracker_${currentUser.id}_${activeTeamId}`;let raw=localStorage.getItem(key);if(!raw&&!localStorage.getItem('matchtracker_migrated_'+currentUser.id)){raw=localStorage.getItem('matchtracker');if(raw){localStorage.setItem(key,raw);localStorage.setItem('matchtracker_migrated_'+currentUser.id,'1');}}try{let s=JSON.parse(raw||'null');if(s)state={...state,...s};}catch(e){}const team=availableTeams.find(t=>t.id===activeTeamId);state.team=team?.name||state.team;$('teamName').value=state.team;$('opponent').value=state.opponent;$('matchDate').value=state.matchDate||new Date().toISOString().slice(0,10);render();}
+async function switchTeam(id){if(!availableTeams.some(t=>t.id===id))return;activeTeamId=id;loadForActiveTeam();}
+function persist(){if(currentUser&&activeTeamId)localStorage.setItem(`matchtracker_${currentUser.id}_${activeTeamId}`,JSON.stringify(state));else localStorage.setItem('matchtracker',JSON.stringify(state));}
+async function loadPendingRequests(){const {data,error}=await sb.from('registration_requests').select('id,user_id,display_name,status,created_at').eq('club_id',CLUB_ID).eq('status','pending').order('created_at');if(error){$('pendingRequests').innerHTML=`<div class="auth-error">${esc(error.message)}</div>`;return;}if(!data.length){$('pendingRequests').innerHTML='<div class="empty">Keine offenen Registrierungsanfragen.</div>';return;}const teamOptions=availableTeams.map(t=>`<label><input type="checkbox" value="${t.id}"> ${esc(t.name)}</label>`).join('');$('pendingRequests').innerHTML=data.map(r=>`<div class="admin-list"><b>${esc(r.display_name)}</b><div class="tiny">${new Date(r.created_at).toLocaleString('de-DE')}</div><div class="team-checks" data-request="${r.id}">${teamOptions}</div><button class="primary small" onclick="approveRequest('${r.id}','${r.user_id}')">Freigeben</button> <button class="danger small" onclick="rejectRequest('${r.id}')">Ablehnen</button></div>`).join('');}
+async function approveRequest(requestId,userId){try{const box=document.querySelector(`[data-request="${requestId}"]`);const ids=[...box.querySelectorAll('input:checked')].map(x=>x.value);if(!ids.length)throw Error('Bitte mindestens eine Mannschaft auswählen.');const {data:membership,error:mErr}=await sb.from('club_memberships').upsert({club_id:CLUB_ID,user_id:userId,role:'coach',active:true},{onConflict:'club_id,user_id'}).select('id').single();if(mErr)throw mErr;const rows=ids.map(team_id=>({team_id,membership_id:membership.id,role:'coach'}));const {error:sErr}=await sb.from('team_staff').upsert(rows,{onConflict:'team_id,membership_id'});if(sErr)throw sErr;const {error:uErr}=await sb.from('registration_requests').update({status:'approved',reviewed_by:currentUser.id,reviewed_at:new Date().toISOString()}).eq('id',requestId);if(uErr)throw uErr;await loadPendingRequests();alert('Trainer freigeschaltet und Mannschaften zugeordnet.');}catch(e){alert(e.message||'Freigabe fehlgeschlagen.');}}
+async function rejectRequest(id){if(!confirm('Registrierungsanfrage wirklich ablehnen?'))return;const {error}=await sb.from('registration_requests').update({status:'rejected',reviewed_by:currentUser.id,reviewed_at:new Date().toISOString()}).eq('id',id);if(error)alert(error.message);else loadPendingRequests();}
+async function sendInvitation(){try{const email=$('inviteEmail').value.trim(),role=$('inviteRole').value;if(!email)throw Error('Bitte E-Mail-Adresse eintragen.');const {data,error}=await sb.functions.invoke('invite-user',{body:{email,role}});if(error)throw error;$('inviteEmail').value='';alert(data?.message||'Einladung versendet.');}catch(e){alert('Einladung nicht versendet: '+(e.message||'Edge Function nicht erreichbar. Bitte Bereitstellung prüfen.'));}}
+async function initializeAuth(){if(!sb){$('authGate').classList.add('hidden');$('appShell').classList.remove('hidden');load();$('signedInAs').textContent='Offlinebetrieb · lokale Daten';return;}const {data,error}=await sb.auth.getSession();if(error){authMsg('authError',error.message);return;}await handleSession(data.session);}
+
 function load(){
  try{let s=JSON.parse(localStorage.getItem('matchtracker'));if(s)state={...state,...s};}catch(e){}
  state.history=Array.isArray(state.history)?state.history:[];
@@ -91,7 +160,7 @@ function load(){
  state.matchDate=state.matchDate||new Date().toISOString().slice(0,10);
  $('teamName').value=state.team;$('opponent').value=state.opponent;$('matchDate').value=state.matchDate;render();
 }
-function persist(){localStorage.setItem('matchtracker',JSON.stringify(state));}
+
 function tab(name){document.querySelectorAll('main').forEach(x=>x.classList.add('hidden'));$(name).classList.remove('hidden');document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('active',b.dataset.tab===name));render();if(name==='stats')renderStats();}
 function saveSettings(){state.team=$('teamName').value||'Heim';state.opponent=$('opponent').value||'Gast';if($('matchDate').value)state.matchDate=$('matchDate').value;persist();render();}
 function fmt(s){let m=Math.floor(s/60),sec=s%60;return String(m).padStart(2,'0')+':'+String(sec).padStart(2,'0')}
@@ -161,7 +230,7 @@ function renderStats(){
 }
 function exportBackup(){let blob=new Blob([JSON.stringify(state,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='matchtracker-sicherung.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 function importBackup(ev){let file=ev.target.files?.[0];if(!file)return;let reader=new FileReader();reader.onload=()=>{try{let data=JSON.parse(reader.result);if(!data||!Array.isArray(data.players)||!Array.isArray(data.events))throw new Error('Ungültige Sicherungsdatei');if(!confirm('Aktuelle Daten durch die Sicherung ersetzen?'))return;state={...state,...data,history:Array.isArray(data.history)?data.history:[]};state.players.forEach((p,i)=>{p.pid=p.pid||`restored-${i}-${p.num}`;p.playedSeconds=Number(p.playedSeconds)||0;});$('teamName').value=state.team;$('opponent').value=state.opponent;$('matchDate').value=state.matchDate||'';render();renderStats();alert('Sicherung wurde wiederhergestellt.');}catch(err){alert('Sicherung konnte nicht gelesen werden: '+err.message);}finally{ev.target.value='';}};reader.readAsText(file);}
-load();
+initializeAuth().catch(e=>authMsg('authError',e.message));
 if('serviceWorker' in navigator && location.protocol.startsWith('http'))navigator.serviceWorker.register('./sw.js').catch(()=>{});
 </script>
 </body></html>
