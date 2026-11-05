@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-title" content="MatchTracker">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icon-192.png">
-<title>MatchTracker E-Jugend</title>
+<title>MatchTracker Classic</title>
 <style>
 :root{--bg:#101820;--panel:#1b2732;--panel2:#243442;--text:#f4f7fa;--muted:#a8b7c5;--green:#20a568;--blue:#2879c7;--red:#d84b4b;--line:#344655}
 *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--text);font:16px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:env(safe-area-inset-top) 14px calc(22px + env(safe-area-inset-bottom))}
@@ -27,7 +27,7 @@ label{display:block;color:var(--muted);font-size:12px;font-weight:700;margin:10p
 </style>
 </head>
 <body>
-<header><div><h1>⚽ MatchTracker</h1><div class="sub">E-Jugend · 2 × 25 Minuten</div></div><button class="small" onclick="newMatch()">Neues Spiel</button></header>
+<header><div><h1>⚽ MatchTracker</h1><div class="sub" id="youthSummary">E-Jugend · 2 × 25 Minuten</div></div><button class="small" onclick="newMatch()">Neues Spiel</button></header>
 <nav><button class="active" data-tab="match" onclick="tab('match')">Spiel</button><button data-tab="team" onclick="tab('team')">Mannschaft</button><button data-tab="report" onclick="tab('report')">Bericht</button><button data-tab="stats" onclick="tab('stats')">Saison</button></nav>
 
 <main id="match">
@@ -44,7 +44,8 @@ label{display:block;color:var(--muted);font-size:12px;font-weight:700;margin:10p
 <main id="team" class="hidden">
  <section class="card">
   <div class="section-title">Mannschaft & Spiel</div>
-  <label>Teamname</label><input id="teamName" placeholder="Meine Mannschaft" onchange="saveSettings()">
+   <label for="youth">Jugend / Spieldauer</label><select id="youth" onchange="changeYouth()"><option value="E">E-Jugend · 2 × 25 Minuten</option><option value="D">D-Jugend · 2 × 30 Minuten</option></select><div class="tiny" style="margin-top:7px">Die Auswahl wird für neue Spiele gespeichert. Während eines laufenden Spiels ist ein Wechsel nicht möglich.</div>
+   <label>Teamname</label><input id="teamName" placeholder="Meine Mannschaft" onchange="saveSettings()">
   <label>Gegner</label><input id="opponent" placeholder="Gastmannschaft" onchange="saveSettings()">
   <label>Spieldatum</label><input id="matchDate" type="date" onchange="saveSettings()">
   <div class="tiny" style="margin-top:9px">Maximal 13 Spieler: 7 auf dem Feld (inklusive Torwart) und bis zu 6 Ersatzspieler.</div>
@@ -80,24 +81,30 @@ label{display:block;color:var(--muted);font-size:12px;font-weight:700;margin:10p
 <div id="modal" class="modal hidden" onclick="if(event.target===this)closeModal()"><div class="sheet"><h2 id="modalTitle"></h2><div id="modalBody"></div><div class="sheet-actions"><button onclick="closeModal()">Abbrechen</button><button class="primary" id="modalSave">Speichern</button></div></div></div>
 <script>
 const $=id=>document.getElementById(id);
-let state={players:[],events:[],history:[],half:1,remaining:1500,running:false,home:0,away:0,team:"Heim",opponent:"Gast",started:false,finished:false,matchDate:new Date().toISOString().slice(0,10)};
+let state={players:[],events:[],history:[],half:1,remaining:1500,youth:"E",running:false,home:0,away:0,team:"Heim",opponent:"Gast",started:false,finished:false,matchDate:new Date().toISOString().slice(0,10)};
 let interval=null,alarmTimeout=null;
 function load(){
  try{let s=JSON.parse(localStorage.getItem('matchtracker'));if(s)state={...state,...s};}catch(e){}
- state.history=Array.isArray(state.history)?state.history:[];
+ state.youth=state.youth==="D"?"D":"E";
+  state.remaining=Number.isFinite(Number(state.remaining))?Math.max(0,Number(state.remaining)):halfSeconds();
+  state.history=Array.isArray(state.history)?state.history:[];
  state.players=Array.isArray(state.players)?state.players:[];
  state.players.forEach((p,i)=>{p.pid=p.pid||`legacy-${i}-${p.num}-${String(p.name).replace(/\W/g,'')}`;p.playedSeconds=Number(p.playedSeconds)||0;});
  state.events=Array.isArray(state.events)?state.events:[];
  state.matchDate=state.matchDate||new Date().toISOString().slice(0,10);
- $('teamName').value=state.team;$('opponent').value=state.opponent;$('matchDate').value=state.matchDate;render();
+ $('teamName').value=state.team;$('opponent').value=state.opponent;$('matchDate').value=state.matchDate;$('youth').value=state.youth;render();
 }
 function persist(){localStorage.setItem('matchtracker',JSON.stringify(state));}
 function tab(name){document.querySelectorAll('main').forEach(x=>x.classList.add('hidden'));$(name).classList.remove('hidden');document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('active',b.dataset.tab===name));render();if(name==='stats')renderStats();}
 function saveSettings(){state.team=$('teamName').value||'Heim';state.opponent=$('opponent').value||'Gast';if($('matchDate').value)state.matchDate=$('matchDate').value;persist();render();}
+function halfSeconds(){return state.youth==="D"?1800:1500;}
+function youthLabel(){return state.youth+"-Jugend";}
+function changeYouth(){let choice=$("youth").value;if(choice===state.youth)return;if(state.started||state.events.length||state.home||state.away||state.half!==1||state.finished||state.players.some(p=>(Number(p.playedSeconds)||0)>0)){alert("Die Jugendklasse kann erst für ein neues Spiel geändert werden. Bitte zuerst das aktuelle Spiel über ‚Neues Spiel‘ abschließen.");$("youth").value=state.youth;return;}state.youth=choice==="D"?"D":"E";state.remaining=halfSeconds();persist();render();}
 function fmt(s){let m=Math.floor(s/60),sec=s%60;return String(m).padStart(2,'0')+':'+String(sec).padStart(2,'0')}
-function stamp(){return `${state.half}. HZ · ${fmt(1500-state.remaining)}`;}
+function stamp(){return `${state.half}. HZ · ${fmt(Math.max(0,halfSeconds()-state.remaining))}`;}
 function render(){
  $('phase').textContent=state.finished?'Spiel beendet':state.half+'. Halbzeit';
+ $('youthSummary').textContent=`${youthLabel()} · 2 × ${halfSeconds()/60} Minuten`; $('youth').value=state.youth;
  $('clock').textContent=fmt(state.remaining);$('homeLabel').textContent=state.team||'Heim';$('awayLabel').textContent=state.opponent||'Gast';
  $('homeScore').textContent=state.home;$('awayScore').textContent=state.away;
  $('startBtn').textContent=state.running?'Ⅱ Pause':(state.finished?'Spiel beendet':state.started?'▶ Fortsetzen':'▶ Start');
@@ -116,13 +123,13 @@ function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&l
 function eventHtml(arr){return arr.map(e=>`<div class="event"><div>${e.type==='goal'?'⚽':e.type==='sub'?'⇄':'•'} ${esc(e.text)}<small>${esc(e.time)}</small></div><button class="small" onclick="deleteEvent('${e.id}')">Rückgängig</button></div>`).join('')||'<div class="empty">Noch keine Ereignisse erfasst.</div>'}
 function beep(){try{let C=window.AudioContext||window.webkitAudioContext;if(C){let c=new C(),o=c.createOscillator(),g=c.createGain();o.connect(g);g.connect(c.destination);o.frequency.value=880;g.gain.value=.18;o.start();o.stop(c.currentTime+.45);}}catch(e){} if(navigator.vibrate)navigator.vibrate([250,120,250]);}
 function startPause(){if(state.finished)return;if(state.running){state.running=false;clearInterval(interval);render();return;}state.running=true;state.started=true;state.notice='';interval=setInterval(()=>{if(!state.running)return;if(state.remaining>0){state.remaining--;state.players.filter(p=>p.status==='field').forEach(p=>p.playedSeconds=(Number(p.playedSeconds)||0)+1);}if(state.remaining===0){state.running=false;clearInterval(interval);if(state.half===1){state.notice='⏸ Halbzeit! Die erste Halbzeit ist beendet. Starte die zweite Halbzeit manuell.';beep();}else{state.finished=true;state.notice='🏁 Spielende! Beide Halbzeiten sind beendet.';beep();}}render();},1000);render();}
-function resetHalf(){if(!confirm('Aktuelle Halbzeit auf 25:00 zurücksetzen? Bereits erfasste Spielminuten bleiben bestehen.'))return;state.running=false;clearInterval(interval);state.remaining=1500;state.notice='';state.started=false;render();}
-function nextHalf(){state.half=2;state.remaining=1500;state.running=false;state.started=false;state.notice='2. Halbzeit – bereit zum Anpfiff.';render();}
+function resetHalf(){if(!confirm(`Aktuelle Halbzeit auf ${halfSeconds()/60}:00 zurücksetzen? Bereits erfasste Spielminuten bleiben bestehen.`))return;state.running=false;clearInterval(interval);state.remaining=halfSeconds();state.notice='';state.started=false;render();}
+function nextHalf(){state.half=2;state.remaining=halfSeconds();state.running=false;state.started=false;state.notice='2. Halbzeit – bereit zum Anpfiff.';render();}
 function archiveCurrentMatch(){
  if(!(state.started||state.events.length||state.home||state.away))return;
- state.history.push({id:crypto.randomUUID(),date:state.matchDate||new Date().toISOString().slice(0,10),team:state.team,opponent:state.opponent,home:state.home,away:state.away,finished:state.finished,players:state.players.map(p=>({pid:p.pid,num:p.num,name:p.name,playedSeconds:Number(p.playedSeconds)||0})),events:state.events.map(e=>({...e}))});
+ state.history.push({id:crypto.randomUUID(),date:state.matchDate||new Date().toISOString().slice(0,10),team:state.team,opponent:state.opponent,home:state.home,away:state.away,finished:state.finished,youth:state.youth,players:state.players.map(p=>({pid:p.pid,num:p.num,name:p.name,playedSeconds:Number(p.playedSeconds)||0})),events:state.events.map(e=>({...e}))});
 }
-function newMatch(){if(!confirm('Neues Spiel beginnen? Das aktuelle Spiel wird in der Saisonhistorie gespeichert. Der Kader bleibt erhalten.'))return;clearInterval(interval);state.running=false;archiveCurrentMatch();state.events=[];state.players.forEach(p=>p.playedSeconds=0);state.half=1;state.remaining=1500;state.home=0;state.away=0;state.started=false;state.finished=false;state.notice='';state.matchDate=new Date().toISOString().slice(0,10);$('matchDate').value=state.matchDate;render();tab('match');}
+function newMatch(){if(!confirm('Neues Spiel beginnen? Das aktuelle Spiel wird in der Saisonhistorie gespeichert. Der Kader bleibt erhalten.'))return;clearInterval(interval);state.running=false;archiveCurrentMatch();state.events=[];state.players.forEach(p=>p.playedSeconds=0);state.half=1;state.remaining=halfSeconds();state.home=0;state.away=0;state.started=false;state.finished=false;state.notice='';state.matchDate=new Date().toISOString().slice(0,10);$('matchDate').value=state.matchDate;render();tab('match');}
 function openGoal(){
  if(!state.players.length){alert('Bitte zuerst Spieler unter Mannschaft anlegen.');return;}
  let opts=state.players.map((p,i)=>`<option value="${i}">${esc(p.num)} · ${esc(p.name)}</option>`).join('');
@@ -137,15 +144,31 @@ function openGoal(){
  toggleGoalScorer();
 }
 function toggleGoalScorer(){let away=$('goalSide')?.value==='away';$('ownScorer')?.classList.toggle('hidden',away);$('awayScorer')?.classList.toggle('hidden',!away);}
-function openSub(){let field=state.players.map((p,i)=>({...p,i})).filter(p=>p.status==='field'),bench=state.players.map((p,i)=>({...p,i})).filter(p=>p.status==='bench');if(!field.length||!bench.length){alert('Für einen Wechsel benötigst du mindestens einen Spieler auf dem Feld und einen Ersatzspieler.');return;}showModal('Spielerwechsel',`<label>Ausgewechselter Spieler</label><select id="outPlayer">${field.map(p=>`<option value="${p.i}">${esc(p.num)} · ${esc(p.name)}</option>`).join('')}</select><label>Einwechselspieler</label><select id="inPlayer">${bench.map(p=>`<option value="${p.i}">${esc(p.num)} · ${esc(p.name)}</option>`).join('')}</select>`,()=>{let a=state.players[+$('outPlayer').value],b=state.players[+$('inPlayer').value];a.status='bench';b.status='field';state.events.push({id:crypto.randomUUID(),type:'sub',outPid:a.pid,inPid:b.pid,text:`Nr. ${a.num} ${a.name} raus · Nr. ${b.num} ${b.name} rein`,time:stamp()});render();});}
-function showModal(title,body,save){$('modalTitle').textContent=title;$('modalBody').innerHTML=body;$('modal').classList.remove('hidden');$('modalSave').onclick=()=>{save();closeModal();};}
+function openSub(){
+ showModal('Spielerwechsel',`<label>Welche Mannschaft wechselt?</label><select id="subSide" onchange="toggleSubSide()"><option value="home">${esc(state.team)} (eigene Mannschaft)</option><option value="away">${esc(state.opponent)} (Gegner)</option></select><div id="ownSubFields"></div><div id="awaySubFields" class="hidden"><label>Gegner: Rückennummer ausgewechselt</label><input id="opponentOut" type="number" min="1" max="99" inputmode="numeric" placeholder="z. B. 8"><label>Gegner: Rückennummer eingewechselt</label><input id="opponentIn" type="number" min="1" max="99" inputmode="numeric" placeholder="z. B. 12"></div>`,()=>{
+  if($('subSide').value==='away'){
+   let out=$('opponentOut').value.trim(),incoming=$('opponentIn').value.trim();
+   if(!/^[1-9][0-9]?$/.test(out)||!/^[1-9][0-9]?$/.test(incoming)||out===incoming){alert('Bitte zwei unterschiedliche gültige Rückennummern (1–99) eintragen.');return false;}
+   state.events.push({id:crypto.randomUUID(),type:'sub',side:'away',opponentOutNumber:out,opponentInNumber:incoming,text:`${state.opponent}: Nr. ${out} raus · Nr. ${incoming} rein`,time:stamp()});render();return true;
+  }
+  let a=state.players[+$('outPlayer')?.value],b=state.players[+$('inPlayer')?.value];
+  if(!a||!b||a.status!=='field'||b.status!=='bench'){alert('Für einen eigenen Wechsel benötigst du einen Feldspieler und einen Ersatzspieler.');return false;}
+  a.status='bench';b.status='field';state.events.push({id:crypto.randomUUID(),type:'sub',side:'home',outPid:a.pid,inPid:b.pid,text:`${state.team}: Nr. ${a.num} ${a.name} raus · Nr. ${b.num} ${b.name} rein`,time:stamp()});render();return true;
+ });
+ toggleSubSide();
+}
+function toggleSubSide(){
+ let away=$('subSide').value==='away';$('ownSubFields').classList.toggle('hidden',away);$('awaySubFields').classList.toggle('hidden',!away);
+ if(!away){let field=state.players.map((p,i)=>({...p,i})).filter(p=>p.status==='field'),bench=state.players.map((p,i)=>({...p,i})).filter(p=>p.status==='bench');$('ownSubFields').innerHTML=field.length&&bench.length?`<label>Ausgewechselter Spieler</label><select id="outPlayer">${field.map(p=>`<option value="${p.i}">${esc(p.num)} · ${esc(p.name)}</option>`).join('')}</select><label>Einwechselspieler</label><select id="inPlayer">${bench.map(p=>`<option value="${p.i}">${esc(p.num)} · ${esc(p.name)}</option>`).join('')}</select>`:'<div class="notice">Für einen eigenen Wechsel brauchst du mindestens einen Feldspieler und einen Ersatzspieler. Gegnerische Wechsel kannst du trotzdem erfassen.</div>';}
+}
+function showModal(title,body,save){$('modalTitle').textContent=title;$('modalBody').innerHTML=body;$('modal').classList.remove('hidden');$('modalSave').onclick=()=>{if(save()!==false)closeModal();};}
 function closeModal(){$('modal').classList.add('hidden');}
 function addPlayer(){let num=$('newNumber').value,name=$('newName').value.trim(),status=$('newStatus').value;if(state.players.length>=13){alert('Maximal 13 Spieler möglich.');return;}if(!num||!name){alert('Bitte Rückennummer und Namen eintragen.');return;}if(state.players.some(p=>p.num==num)){alert('Diese Rückennummer ist bereits vergeben.');return;}if(status==='field'&&state.players.filter(p=>p.status==='field').length>=7){alert('Maximal 7 Spieler dürfen als Startaufstellung markiert sein.');return;}if(status==='bench'&&state.players.filter(p=>p.status==='bench').length>=6){alert('Maximal 6 Ersatzspieler möglich.');return;}state.players.push({pid:crypto.randomUUID(),num,name,status,playedSeconds:0});$('newNumber').value='';$('newName').value='';render();}
 function editPlayer(i){let p=state.players[i];showModal('Spieler bearbeiten',`<label>Rückennummer</label><input id="editNum" type="number" value="${esc(p.num)}"><label>Name</label><input id="editName" value="${esc(p.name)}"><label>Status</label><select id="editStatus"><option value="field" ${p.status==='field'?'selected':''}>Auf dem Feld</option><option value="bench" ${p.status==='bench'?'selected':''}>Ersatzbank</option></select>`,()=>{let num=$('editNum').value,name=$('editName').value.trim(),status=$('editStatus').value;if(state.players.some((x,j)=>j!==i&&x.num==num))return alert('Rückennummer bereits vergeben.');if(status==='field'&&p.status!=='field'&&state.players.filter(x=>x.status==='field').length>=7)return alert('Maximal 7 auf dem Feld.');if(status==='bench'&&p.status!=='bench'&&state.players.filter(x=>x.status==='bench').length>=6)return alert('Maximal 6 auf dem Feld.');p.num=num;p.name=name;p.status=status;render();});}
 function removePlayer(i){if(confirm(`${state.players[i].name} aus dem Kader entfernen? Frühere Spielstatistiken bleiben erhalten.`)){state.players.splice(i,1);render();}}
 function deleteEvent(id){let e=state.events.find(x=>x.id===id);if(!e)return;if(!confirm('Ereignis rückgängig machen?'))return;if(e.type==='goal'){let side=e.side||(e.text.startsWith(state.team+':')?'home':'away');state[side]=Math.max(0,state[side]-1);}else if(e.type==='sub'&&e.outPid&&e.inPid){let a=state.players.find(p=>p.pid===e.outPid),b=state.players.find(p=>p.pid===e.inPid);if(a&&b&&a.status==='bench'&&b.status==='field'){a.status='field';b.status='bench';}else{alert('Dieser ältere Wechsel kann nicht automatisch zurückgesetzt werden, weil inzwischen weitere Wechsel erfolgt sind.');return;}}state.events=state.events.filter(x=>x.id!==id);render();}
 function clearEvents(){if(!confirm('Alle Tore und Wechsel dieses Spiels löschen?'))return;state.events=[];state.home=0;state.away=0;render();}
-function shareReport(){let lines=[`${state.team} ${state.home}:${state.away} ${state.opponent}`,'Spielbericht E-Jugend','',...state.events.map(e=>`${e.time} – ${e.text}`)];let txt=lines.join('\n');if(navigator.share)navigator.share({title:'Spielbericht',text:txt}).catch(()=>{});else if(navigator.clipboard)navigator.clipboard.writeText(txt).then(()=>alert('Spielbericht in die Zwischenablage kopiert.'));else alert(txt);}
+function shareReport(){let lines=[`${state.team} ${state.home}:${state.away} ${state.opponent}`,`Spielbericht ${youthLabel()} (2 × ${halfSeconds()/60} Minuten)`,'',...state.events.map(e=>`${e.time} – ${e.text}`)];let txt=lines.join('\n');if(navigator.share)navigator.share({title:'Spielbericht',text:txt}).catch(()=>{});else if(navigator.clipboard)navigator.clipboard.writeText(txt).then(()=>alert('Spielbericht in die Zwischenablage kopiert.'));else alert(txt);}
 function renderStats(){
  if(!$('statsTable'))return;
  let from=$('statsFrom').value,to=$('statsTo').value;
@@ -160,7 +183,7 @@ function renderStats(){
  $('historyList').innerHTML=state.history.slice().reverse().map(m=>`<div class="event"><div><b>${esc(m.date||'ohne Datum')} · ${esc(m.team)} ${m.home}:${m.away} ${esc(m.opponent)}</b><small>${(m.players||[]).reduce((n,p)=>n+(Number(p.playedSeconds)||0),0)>0?'Spielzeiten erfasst':'Keine minutengenaue Spielzeit vorhanden'}</small></div></div>`).join('')||'<div class="empty">Noch keine archivierten Spiele. Beim Start eines neuen Spiels wird das vorherige hier gespeichert.</div>';
 }
 function exportBackup(){let blob=new Blob([JSON.stringify(state,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='matchtracker-sicherung.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
-function importBackup(ev){let file=ev.target.files?.[0];if(!file)return;let reader=new FileReader();reader.onload=()=>{try{let data=JSON.parse(reader.result);if(!data||!Array.isArray(data.players)||!Array.isArray(data.events))throw new Error('Ungültige Sicherungsdatei');if(!confirm('Aktuelle Daten durch die Sicherung ersetzen?'))return;state={...state,...data,history:Array.isArray(data.history)?data.history:[]};state.players.forEach((p,i)=>{p.pid=p.pid||`restored-${i}-${p.num}`;p.playedSeconds=Number(p.playedSeconds)||0;});$('teamName').value=state.team;$('opponent').value=state.opponent;$('matchDate').value=state.matchDate||'';render();renderStats();alert('Sicherung wurde wiederhergestellt.');}catch(err){alert('Sicherung konnte nicht gelesen werden: '+err.message);}finally{ev.target.value='';}};reader.readAsText(file);}
+function importBackup(ev){let file=ev.target.files?.[0];if(!file)return;let reader=new FileReader();reader.onload=()=>{try{let data=JSON.parse(reader.result);if(!data||!Array.isArray(data.players)||!Array.isArray(data.events))throw new Error('Ungültige Sicherungsdatei');if(!confirm('Aktuelle Daten durch die Sicherung ersetzen?'))return;state={...state,...data,history:Array.isArray(data.history)?data.history:[]};state.players.forEach((p,i)=>{p.pid=p.pid||`restored-${i}-${p.num}`;p.playedSeconds=Number(p.playedSeconds)||0;});$('teamName').value=state.team;$('opponent').value=state.opponent;$('matchDate').value=state.matchDate||'';state.youth=state.youth==='D'?'D':'E';$('youth').value=state.youth;render();renderStats();alert('Sicherung wurde wiederhergestellt.');}catch(err){alert('Sicherung konnte nicht gelesen werden: '+err.message);}finally{ev.target.value='';}};reader.readAsText(file);}
 load();
 if('serviceWorker' in navigator && location.protocol.startsWith('http'))navigator.serviceWorker.register('./sw.js').catch(()=>{});
 </script>
