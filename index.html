@@ -83,6 +83,8 @@ label{display:block;color:var(--muted);font-size:12px;font-weight:700;margin:10p
 const $=id=>document.getElementById(id);
 let state={players:[],events:[],history:[],half:1,remaining:1500,youth:"E",running:false,home:0,away:0,team:"Heim",opponent:"Gast",started:false,finished:false,matchDate:new Date().toISOString().slice(0,10)};
 let interval=null,alarmTimeout=null;
+// Laufende Spielzeit anhand realer Zeitstempel berechnen, auch nach App-Wechsel.
+
 function load(){
  try{let s=JSON.parse(localStorage.getItem('matchtracker'));if(s)state={...state,...s};}catch(e){}
  state.youth=state.youth==="D"?"D":"E";
@@ -92,6 +94,9 @@ function load(){
  state.players.forEach((p,i)=>{p.pid=p.pid||`legacy-${i}-${p.num}-${String(p.name).replace(/\W/g,'')}`;p.playedSeconds=Number(p.playedSeconds)||0;});
  state.events=Array.isArray(state.events)?state.events:[];
  state.matchDate=state.matchDate||new Date().toISOString().slice(0,10);
+ // Alte Sicherungen ohne Zeitanker dürfen keine unbekannte Hintergrundzeit nachbuchen.
+ if(state.running && !Number.isFinite(Number(state.lastTickMs)))state.running=false;
+ if(state.running)syncClock();
  $('teamName').value=state.team;$('opponent').value=state.opponent;$('matchDate').value=state.matchDate;$('youth').value=state.youth;render();
 }
 function persist(){localStorage.setItem('matchtracker',JSON.stringify(state));}
@@ -104,8 +109,9 @@ function maxBench(){return 6;}
 function maxPlayers(){return maxField()+maxBench();}
 function changeYouth(){let choice=$("youth").value;if(choice===state.youth)return;if(state.started||state.events.length||state.home||state.away||state.half!==1||state.finished||state.players.some(p=>(Number(p.playedSeconds)||0)>0)){alert("Die Jugendklasse kann erst für ein neues Spiel geändert werden. Bitte zuerst das aktuelle Spiel über ‚Neues Spiel‘ abschließen.");$("youth").value=state.youth;return;}if(choice==="E"&&(state.players.length>13||state.players.filter(p=>p.status==='field').length>7)){alert('Für die E-Jugend sind maximal 13 Spieler erlaubt, davon 7 auf dem Feld und 6 auf der Ersatzbank. Bitte zuerst den D-Jugend-Kader entsprechend anpassen.');$("youth").value=state.youth;return;}state.youth=choice==="D"?"D":"E";state.remaining=halfSeconds();persist();render();}
 function fmt(s){let m=Math.floor(s/60),sec=s%60;return String(m).padStart(2,'0')+':'+String(sec).padStart(2,'0')}
-function stamp(){return `${state.half}. HZ · ${fmt(Math.max(0,halfSeconds()-state.remaining))}`;}
+function stamp(){syncClock();return `${state.half}. HZ · ${fmt(Math.max(0,halfSeconds()-state.remaining))}`;}
 function render(){
+ syncClock();
  $('phase').textContent=state.finished?'Spiel beendet':state.half+'. Halbzeit';
  $('youthSummary').textContent=`${youthLabel()} · 2 × ${halfSeconds()/60} Minuten`; $('youth').value=state.youth;
  $('clock').textContent=fmt(state.remaining);$('homeLabel').textContent=state.team||'Heim';$('awayLabel').textContent=state.opponent||'Gast';
@@ -115,7 +121,7 @@ function render(){
  $('timerHint').textContent=state.running?'Spielzeit läuft':state.remaining===0?'Zeit abgelaufen':state.started?'Uhr angehalten':'Bereit zum Anpfiff';
  $('notice').classList.toggle('hidden',!state.notice);$('notice').textContent=state.notice||'';
  $('events').innerHTML=eventHtml(state.events.slice().reverse().slice(0,8));
- $('players').innerHTML=state.players.map((p,i)=>`<div class="player"><span class="number">${esc(p.num)}</span><span class="player-name">${esc(p.name)}<small class="tag">${p.status==='field'?'Auf dem Feld':'Ersatzbank'} · ${fmt(Math.floor((p.playedSeconds||0)/60))} Min.</small></span><button class="small" onclick="editPlayer(${i})">Bearbeiten</button><button class="small danger" onclick="removePlayer(${i})">×</button></div>`).join('')||'<div class="empty">Noch keine Spieler angelegt.</div>';
+ $('players').innerHTML=state.players.map((p,i)=>`<div class="player"><span class="number">${esc(p.num)}</span><span class="player-name">${esc(p.name)}<small class="tag">${p.status==='field'?'Auf dem Feld':'Ersatzbank'} · ${fmt(Math.floor((p.playedSeconds||0)/60))} Min.</small></span>${p.status==='field'&&!state.started&&!state.running&&!state.finished&&state.half===1?`<button class="small blue" onclick="swapBeforeKickoff(${i})">⇄ Tauschen</button>`:''}<button class="small" onclick="editPlayer(${i})">Bearbeiten</button><button class="small danger" onclick="removePlayer(${i})">×</button></div>`).join('')||'<div class="empty">Noch keine Spieler angelegt.</div>';
  $('playerCount').textContent=`${state.players.length}/${maxPlayers()} Spieler · ${state.players.filter(p=>p.status==='field').length}/${maxField()} auf dem Feld · ${state.players.filter(p=>p.status==='bench').length}/${maxBench()} Ersatz`;
  $('rosterLimits').textContent=`Maximal ${maxPlayers()} Spieler: ${maxField()} auf dem Feld (inklusive Torwart) und bis zu ${maxBench()} Ersatzspieler.`;
  $('reportSummary').innerHTML=`<div class="score" style="padding:10px 0"><div><div class="team">${esc(state.team)}</div><div class="num">${state.home}</div></div><div class="sep">:</div><div><div class="team">${esc(state.opponent)}</div><div class="num">${state.away}</div></div></div><p class="tiny">${state.events.length} Ereignisse · ${state.finished?'Beendet':state.half+'. Halbzeit'}</p>`;
@@ -126,15 +132,58 @@ function render(){
 function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function eventHtml(arr){return arr.map(e=>`<div class="event"><div>${e.type==='goal'?'⚽':e.type==='sub'?'⇄':'•'} ${esc(e.text)}<small>${esc(e.time)}</small></div><button class="small" onclick="deleteEvent('${e.id}')">Rückgängig</button></div>`).join('')||'<div class="empty">Noch keine Ereignisse erfasst.</div>'}
 function beep(){try{let C=window.AudioContext||window.webkitAudioContext;if(C){let c=new C(),o=c.createOscillator(),g=c.createGain();o.connect(g);g.connect(c.destination);o.frequency.value=880;g.gain.value=.18;o.start();o.stop(c.currentTime+.45);}}catch(e){} if(navigator.vibrate)navigator.vibrate([250,120,250]);}
-function startPause(){if(state.finished)return;if(state.running){state.running=false;clearInterval(interval);render();return;}state.running=true;state.started=true;state.notice='';interval=setInterval(()=>{if(!state.running)return;if(state.remaining>0){state.remaining--;state.players.filter(p=>p.status==='field').forEach(p=>p.playedSeconds=(Number(p.playedSeconds)||0)+1);}if(state.remaining===0){state.running=false;clearInterval(interval);if(state.half===1){state.notice='⏸ Halbzeit! Die erste Halbzeit ist beendet. Starte die zweite Halbzeit manuell.';beep();}else{state.finished=true;state.notice='🏁 Spielende! Beide Halbzeiten sind beendet.';beep();}}render();},1000);render();}
-function resetHalf(){if(!confirm(`Aktuelle Halbzeit auf ${halfSeconds()/60}:00 zurücksetzen? Bereits erfasste Spielminuten bleiben bestehen.`))return;state.running=false;clearInterval(interval);state.remaining=halfSeconds();state.notice='';state.started=false;render();}
-function nextHalf(){state.half=2;state.remaining=halfSeconds();state.running=false;state.started=false;state.notice='2. Halbzeit – bereit zum Anpfiff.';render();}
+function syncClock(){
+ if(!state.running)return;
+ const now=Date.now();
+ if(!Number.isFinite(Number(state.lastTickMs))){state.lastTickMs=now;return;}
+ const elapsed=Math.max(0,now-Number(state.lastTickMs));
+ const budget=Math.max(0,Math.round(Number(state.remaining)*1000));
+ const applied=Math.min(elapsed,budget);
+ const carried=Math.max(0,Number(state.tickRemainderMs)||0);
+ const total=carried+applied;
+ const whole=Math.floor(total/1000);
+ state.tickRemainderMs=total-whole*1000;
+ state.remaining=Math.max(0,Number(state.remaining)-whole);
+ if(whole>0)state.players.filter(p=>p.status==='field').forEach(p=>p.playedSeconds=(Number(p.playedSeconds)||0)+whole);
+ state.lastTickMs=now;
+ if(elapsed>=budget || state.remaining<=0){
+  // Restliche Millisekunden bei Halbzeitende nicht in die nächste Halbzeit übertragen.
+  state.remaining=0;state.running=false;state.lastTickMs=null;state.tickRemainderMs=0;
+  if(state.half===1){state.notice='⏸ Halbzeit! Die erste Halbzeit ist beendet. Starte die zweite Halbzeit manuell.';}
+  else{state.finished=true;state.notice='🏁 Spielende! Beide Halbzeiten sind beendet.';}
+  // Akustisches Signal ist nur bei geöffneter App möglich.
+  if(!document.hidden)beep();
+ }
+}
+function startPause(){
+ if(state.finished)return;
+ if(state.running){syncClock();state.running=false;state.lastTickMs=null;clearInterval(interval);interval=null;render();return;}
+ if(state.remaining<=0)return;
+ state.running=true;state.started=true;state.notice='';state.lastTickMs=Date.now();
+ state.tickRemainderMs=Number(state.tickRemainderMs)||0;
+ clearInterval(interval);interval=setInterval(()=>render(),250);render();
+}
+function resetHalf(){if(!confirm(`Aktuelle Halbzeit auf ${halfSeconds()/60}:00 zurücksetzen? Bereits erfasste Spielminuten bleiben bestehen.`))return;state.running=false;clearInterval(interval);interval=null;state.lastTickMs=null;state.tickRemainderMs=0;state.remaining=halfSeconds();state.notice='';state.started=false;render();}
+function nextHalf(){if(state.running||state.half!==1||state.remaining!==0)return;state.half=2;state.remaining=halfSeconds();state.running=false;state.lastTickMs=null;state.tickRemainderMs=0;state.started=false;state.notice='2. Halbzeit – bereit zum Anpfiff.';render();}
+function swapBeforeKickoff(i){
+ if(state.started||state.running||state.half!==1||state.finished||state.events.length||state.home||state.away){alert('Die Startaufstellung kann nur vor dem ersten Anpfiff geändert werden.');return;}
+ const player=state.players[i];if(!player||player.status!=='field')return;
+ const bench=state.players.map((p,j)=>({...p,index:j})).filter(p=>p.status==='bench');
+ if(!bench.length){alert('Es ist kein Ersatzspieler vorhanden.');return;}
+ showModal('Startaufstellung vor Anpfiff ändern',`<div class="tiny">Nr. ${esc(player.num)} ${esc(player.name)} wird auf die Ersatzbank gesetzt. Wähle den Spieler, der stattdessen beginnen soll.</div><label>Ersatzspieler auswählen</label><select id="preKickoffIn">${bench.map(p=>`<option value="${p.index}">Nr. ${esc(p.num)} · ${esc(p.name)}</option>`).join('')}</select>`,()=>{
+  if(state.started||state.running||state.half!==1||state.finished)return false;
+  const replacement=state.players[Number($('preKickoffIn').value)];
+  if(!replacement||replacement.status!=='bench'||player.status!=='field')return false;
+  player.status='bench';replacement.status='field';render();return true;
+ });
+}
 function archiveCurrentMatch(){
  if(!(state.started||state.events.length||state.home||state.away))return;
  state.history.push({id:crypto.randomUUID(),date:state.matchDate||new Date().toISOString().slice(0,10),team:state.team,opponent:state.opponent,home:state.home,away:state.away,finished:state.finished,youth:state.youth,players:state.players.map(p=>({pid:p.pid,num:p.num,name:p.name,playedSeconds:Number(p.playedSeconds)||0})),events:state.events.map(e=>({...e}))});
 }
-function newMatch(){if(!confirm('Neues Spiel beginnen? Das aktuelle Spiel wird in der Saisonhistorie gespeichert. Der Kader bleibt erhalten.'))return;clearInterval(interval);state.running=false;archiveCurrentMatch();state.events=[];state.players.forEach(p=>p.playedSeconds=0);state.half=1;state.remaining=halfSeconds();state.home=0;state.away=0;state.started=false;state.finished=false;state.notice='';state.matchDate=new Date().toISOString().slice(0,10);$('matchDate').value=state.matchDate;render();tab('match');}
+function newMatch(){if(!confirm('Neues Spiel beginnen? Das aktuelle Spiel wird in der Saisonhistorie gespeichert. Der Kader bleibt erhalten.'))return;syncClock();clearInterval(interval);interval=null;state.running=false;state.lastTickMs=null;state.tickRemainderMs=0;archiveCurrentMatch();state.events=[];state.players.forEach(p=>p.playedSeconds=0);state.half=1;state.remaining=halfSeconds();state.home=0;state.away=0;state.started=false;state.finished=false;state.notice='';state.matchDate=new Date().toISOString().slice(0,10);$('matchDate').value=state.matchDate;render();tab('match');}
 function openGoal(){
+ syncClock();
  if(!state.players.length){alert('Bitte zuerst Spieler unter Mannschaft anlegen.');return;}
  let opts=state.players.map((p,i)=>`<option value="${i}">${esc(p.num)} · ${esc(p.name)}</option>`).join('');
  showModal('Tor erfassen',`<label>Für welche Mannschaft?</label><select id="goalSide" onchange="toggleGoalScorer()"><option value="home">${esc(state.team)}</option><option value="away">${esc(state.opponent)}</option></select><div id="ownScorer"><label>Torschütze</label><select id="goalPlayer">${opts}</select></div><div id="awayScorer" class="hidden"><label>Rückennummer des gegnerischen Torschützen (optional)</label><input id="awayNumber" type="number" min="1" max="99" placeholder="z. B. 10"></div>`,()=>{
@@ -149,6 +198,7 @@ function openGoal(){
 }
 function toggleGoalScorer(){let away=$('goalSide')?.value==='away';$('ownScorer')?.classList.toggle('hidden',away);$('awayScorer')?.classList.toggle('hidden',!away);}
 function openSub(){
+ syncClock();
  showModal('Spielerwechsel',`<label>Welche Mannschaft wechselt?</label><select id="subSide" onchange="toggleSubSide()"><option value="home">${esc(state.team)} (eigene Mannschaft)</option><option value="away">${esc(state.opponent)} (Gegner)</option></select><div id="ownSubFields"></div><div id="awaySubFields" class="hidden"><label>Gegner: Rückennummer ausgewechselt</label><input id="opponentOut" type="number" min="1" max="99" inputmode="numeric" placeholder="z. B. 8"><label>Gegner: Rückennummer eingewechselt</label><input id="opponentIn" type="number" min="1" max="99" inputmode="numeric" placeholder="z. B. 12"></div>`,()=>{
   if($('subSide').value==='away'){
    let out=$('opponentOut').value.trim(),incoming=$('opponentIn').value.trim();
@@ -186,9 +236,13 @@ function renderStats(){
  $('statsTable').innerHTML=rows.length?`<table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr><th style="text-align:left;padding:8px">Spieler</th><th style="padding:8px">Minuten</th><th style="padding:8px">Einsätze</th><th style="padding:8px">Tore</th></tr></thead><tbody>${rows.map(p=>`<tr style="border-top:1px solid var(--line)"><td style="padding:8px">${esc(p.num)} · ${esc(p.name)}</td><td style="text-align:center">${(p.seconds/60).toFixed(1)}</td><td style="text-align:center">${p.apps}</td><td style="text-align:center">${p.goals}</td></tr>`).join('')}</tbody></table>`:'<div class="empty">Noch keine Spielzeiten vorhanden. Spiele werden beim Start der Uhr erfasst und beim Beginn eines neuen Spiels archiviert.</div>';
  $('historyList').innerHTML=state.history.slice().reverse().map(m=>`<div class="event"><div><b>${esc(m.date||'ohne Datum')} · ${esc(m.team)} ${m.home}:${m.away} ${esc(m.opponent)}</b><small>${(m.players||[]).reduce((n,p)=>n+(Number(p.playedSeconds)||0),0)>0?'Spielzeiten erfasst':'Keine minutengenaue Spielzeit vorhanden'}</small></div></div>`).join('')||'<div class="empty">Noch keine archivierten Spiele. Beim Start eines neuen Spiels wird das vorherige hier gespeichert.</div>';
 }
-function exportBackup(){let blob=new Blob([JSON.stringify(state,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='matchtracker-sicherung.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
-function importBackup(ev){let file=ev.target.files?.[0];if(!file)return;let reader=new FileReader();reader.onload=()=>{try{let data=JSON.parse(reader.result);if(!data||!Array.isArray(data.players)||!Array.isArray(data.events))throw new Error('Ungültige Sicherungsdatei');if(!confirm('Aktuelle Daten durch die Sicherung ersetzen?'))return;state={...state,...data,history:Array.isArray(data.history)?data.history:[]};state.players.forEach((p,i)=>{p.pid=p.pid||`restored-${i}-${p.num}`;p.playedSeconds=Number(p.playedSeconds)||0;});$('teamName').value=state.team;$('opponent').value=state.opponent;$('matchDate').value=state.matchDate||'';state.youth=state.youth==='D'?'D':'E';$('youth').value=state.youth;render();renderStats();alert('Sicherung wurde wiederhergestellt.');}catch(err){alert('Sicherung konnte nicht gelesen werden: '+err.message);}finally{ev.target.value='';}};reader.readAsText(file);}
+function exportBackup(){syncClock();let blob=new Blob([JSON.stringify(state,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='matchtracker-sicherung.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+function importBackup(ev){let file=ev.target.files?.[0];if(!file)return;let reader=new FileReader();reader.onload=()=>{try{let data=JSON.parse(reader.result);if(!data||!Array.isArray(data.players)||!Array.isArray(data.events))throw new Error('Ungültige Sicherungsdatei');if(!confirm('Aktuelle Daten durch die Sicherung ersetzen?'))return;state={...state,...data,history:Array.isArray(data.history)?data.history:[]};if(state.running&&!Number.isFinite(Number(state.lastTickMs)))state.running=false;syncClock();state.players.forEach((p,i)=>{p.pid=p.pid||`restored-${i}-${p.num}`;p.playedSeconds=Number(p.playedSeconds)||0;});$('teamName').value=state.team;$('opponent').value=state.opponent;$('matchDate').value=state.matchDate||'';state.youth=state.youth==='D'?'D':'E';$('youth').value=state.youth;render();renderStats();alert('Sicherung wurde wiederhergestellt.');}catch(err){alert('Sicherung konnte nicht gelesen werden: '+err.message);}finally{ev.target.value='';}};reader.readAsText(file);}
 load();
+if(state.running)interval=setInterval(()=>render(),250);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)render();});
+window.addEventListener('pageshow',()=>render());
+window.addEventListener('focus',()=>render());
 if('serviceWorker' in navigator && location.protocol.startsWith('http'))navigator.serviceWorker.register('./sw.js').catch(()=>{});
 </script>
 </body></html>
